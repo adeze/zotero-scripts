@@ -189,16 +189,29 @@
         let mdFile = null;
 
         try {
-            // Add a small delay to ensure file is written (async filesystem operations)
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            // Check if markdown file exists
+            // Wait for file to be fully written by docling
             mdFile = Components.classes["@mozilla.org/file/local;1"]
                 .createInstance(Components.interfaces.nsIFile);
             mdFile.initWithPath(mdPath);
 
-            if (!mdFile.exists()) {
-                console.error(`Markdown file not found: ${mdPath}`);
+            // Retry logic: wait for file to exist AND have content
+            let retries = 10;
+            let fileReady = false;
+
+            while (retries > 0 && !fileReady) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                if (mdFile.exists() && mdFile.fileSize > 0) {
+                    fileReady = true;
+                    console.log(`Markdown file ready: ${mdPath} (${mdFile.fileSize} bytes)`);
+                } else {
+                    retries--;
+                    console.log(`Waiting for markdown file... (${retries} retries left)`);
+                }
+            }
+
+            if (!fileReady) {
+                console.error(`Markdown file not ready after waiting: ${mdPath}`);
                 // Try to list files in the directory to debug
                 const dir = mdPath.substring(0, mdPath.lastIndexOf('/'));
                 const dirFile = Components.classes["@mozilla.org/file/local;1"]
@@ -210,7 +223,7 @@
                     while (entries.hasMoreElements()) {
                         const entry = entries.getNext().QueryInterface(Components.interfaces.nsIFile);
                         if (entry.leafName.endsWith('.md')) {
-                            console.log(`  Found .md file: ${entry.leafName}`);
+                            console.log(`  Found .md file: ${entry.leafName} (${entry.fileSize} bytes)`);
                         }
                     }
                 }

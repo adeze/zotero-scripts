@@ -134,16 +134,28 @@ const Components = require("Components");
         let mdFile = null;
 
         try {
-            // Add a small delay to ensure file is written (async filesystem operations)
-            await new Promise(resolve => setTimeout(resolve, 100));
+            // Wait for file to be written and verify it has content
+            let retries = 10;
+            let fileReady = false;
 
-            // Check if markdown file exists
-            mdFile = Components.classes["@mozilla.org/file/local;1"]
-                .createInstance(Components.interfaces.nsIFile);
-            mdFile.initWithPath(mdPath);
+            while (retries > 0 && !fileReady) {
+                await new Promise(resolve => setTimeout(resolve, 500));
 
-            if (!mdFile.exists()) {
-                Zotero.logError(`Markdown file not found: ${mdPath}`);
+                mdFile = Components.classes["@mozilla.org/file/local;1"]
+                    .createInstance(Components.interfaces.nsIFile);
+                mdFile.initWithPath(mdPath);
+
+                if (mdFile.exists() && mdFile.fileSize > 0) {
+                    fileReady = true;
+                    Zotero.log(`Markdown file ready: ${mdPath} (${mdFile.fileSize} bytes)`);
+                } else {
+                    Zotero.log(`Waiting for file to be written: ${mdPath} (attempt ${11 - retries}/10)`);
+                    retries--;
+                }
+            }
+
+            if (!fileReady) {
+                Zotero.logError(`Markdown file not ready after waiting: ${mdPath}`);
                 // Try to list files in the directory to debug
                 const dir = mdPath.substring(0, mdPath.lastIndexOf('/'));
                 const dirFile = Components.classes["@mozilla.org/file/local;1"]
@@ -155,7 +167,7 @@ const Components = require("Components");
                     while (entries.hasMoreElements()) {
                         const entry = entries.getNext().QueryInterface(Components.interfaces.nsIFile);
                         if (entry.leafName.endsWith('.md')) {
-                            Zotero.log(`  Found .md file: ${entry.leafName}`);
+                            Zotero.log(`  Found .md file: ${entry.leafName} (${entry.fileSize} bytes)`);
                         }
                     }
                 }
